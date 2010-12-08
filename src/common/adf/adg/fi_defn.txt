@@ -10345,8 +10345,20 @@ group ADI_NORM_FUNC
 	    result DB_GEOMC_TYPE
 	    operands DB_LBYTE_TYPE DB_INT_TYPE
 	    routine adu_geometrycollection_srid_fromWKB
-        
+ 
+     operator ADI_GEOMSVG_OP type ADI_PREFIX
+        name "geom_asSVG" support ADI_INGRES_6
+        alias "st_geom_asSVG"
+        alias "geom_asSVG"
+        alias "asSVG"
 
+	fi ADFI_1701_GEOM_AS_SVG
+	    description geomc    : asSVG(geom)
+	    lenspec ADI_FIXED sizeof(ADP_PERIPHERAL)
+	    null_preinst ADE_1CXI_SET_SKIP
+	    result DB_LVCH_TYPE
+	    operands DB_GEOM_TYPE
+	    routine adu_geom_asSVG
 
 group ADI_COPY_COERCION
 

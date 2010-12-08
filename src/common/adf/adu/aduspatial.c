@@ -2562,6 +2562,308 @@ DB_DATA_VALUE   *dv_out)
 #endif
 }
 
+/*
+ * Helper function for asSVG to handle dynamic allocation
+ */
+uchar *
+adu_geom_asSVG_realloc(
+i4 *len,
+uchar *buffer_item,
+i4 *buffer_size,
+uchar *buffer
+)
+{
+    *len += STlen(buffer_item) + 1; /* for the null terminating character */
+    if(*len > *buffer_size)
+    {
+        *buffer_size = *len;
+        uchar *old = buffer;
+        buffer = (uchar *) MEmalloc(*buffer_size);
+        STcopy(old, buffer);
+        MEsysfree((PTR) old);
+    }
+
+    STcat(buffer, buffer_item);
+
+    return buffer;
+}
+
+/* 
+ * This function converts WKB into SVG format data
+ */
+DB_STATUS
+adu_geom_asSVG(
+ADF_CB          *adf_scb,
+DB_DATA_VALUE   *dv_in,
+DB_DATA_VALUE   *dv_out)
+{
+#ifndef _WITH_GEO
+    return (adu_error(adf_scb, E_AD5606_SPATIAL_NOT_SUPPORTED, 2, 0));
+#else
+    DB_STATUS status = E_DB_OK;
+    DB_DATA_VALUE dv_buf;
+    GEOSContextHandle_t handle;
+
+    GEOSGeometry *geometry = NULL;
+    GEOSGeometry *exterior = NULL;
+    GEOSGeometry *interior = NULL;
+    GEOSCoordSeq *coords = NULL;
+
+    i4 num_points, num_interior, dims, i, j;
+    i4 len = 0, buffer_size = 64, sub_geom_count = 1;
+    f8 x, y, z;
+    i4 multi = 0;
+    uchar *buffer = (uchar *) MEmalloc(buffer_size);
+    uchar buffer_item[64];
+
+    buffer[0] = '\0';
+    buffer_item[0] = '\0';
+
+    if(ADI_ISNULL_MACRO(dv_in))
+    {
+        ADF_SETNULL_MACRO(dv_out);
+        return E_DB_OK;
+    }
+
+    /* Initialize geos and convert the input data into a geos geometry */
+    handle = initGEOS_r( geos_Notice, geos_Error );
+    status = dataValueToGeos(adf_scb, dv_in, handle, &geometry, FALSE);
+    if(status != E_DB_OK)
+    {
+        finishGEOS_r(handle);
+        return (adu_error(adf_scb, E_AD5600_GEOSPATIAL_USER, 2, 0,
+                "adu_geo_asSVG: Bad conversion data value to GEOS"));
+    }
+
+    switch(GEOSGeomTypeId_r(handle, geometry))
+    {
+        case GEOS_MULTIPOINT:
+            sub_geom_count = GEOSGetNumGeometries_r( handle, geometry );
+            multi = 1;
+        case GEOS_POINT:
+            for( j = 0; j < sub_geom_count; j++ )
+            {
+                if(multi == 1)
+                {
+		    geometry = GEOSGetGeometryN_r( handle, geometry, j );
+                    coords = GEOSGeom_getCoordSeq_r( handle, geometry );
+                }
+                else
+		    coords = GEOSGeom_getCoordSeq_r( handle, geometry );
+
+                GEOSCoordSeq_getDimensions_r( handle, coords, &dims );
+    
+                /* empty out the buffer */
+                GEOSCoordSeq_getX_r( handle, coords, j, &x );
+                GEOSCoordSeq_getY_r( handle, coords, j, &y );
+
+                if( dims > 2 )
+                {
+                    GEOSCoordSeq_getZ_r( handle, coords, 0, &z );
+                    if( i == 0 && j == 0 )
+                        sprintf(buffer_item, "cx=\"%f\" cy=\"%f\" cz=\"%f\"", x, y, z);
+                    else
+                        sprintf(buffer_item, ";cx=\"%f\" cy=\"%f\" cz=\"%f\"", x, y, z);
+                }
+                else
+                {
+                    if( i == 0 && j == 0 )
+                        sprintf(buffer_item, "cx=\"%f\" cy=\"%f\"", x, y);
+                    else
+                        sprintf(buffer_item, ";cx=\"%f\" cy=\"%f\"", x, y);
+                }
+
+                buffer = adu_geom_asSVG_realloc(&len, buffer_item, &buffer_size, buffer);
+            }
+    
+            dv_buf.db_data = STalloc(buffer);
+            dv_buf.db_length = STlen(buffer);
+            dv_buf.db_datatype = DB_VBYTE_TYPE;
+
+            status = adu_wkbDV_to_long( adf_scb, &dv_buf, dv_out );
+            MEsysfree((PTR) buffer);
+            MEtfree(dv_buf.db_data);
+
+            break;
+        case GEOS_MULTILINESTRING:
+            sub_geom_count = GEOSGetNumGeometries_r( handle, geometry );
+            multi = 1;
+        case GEOS_LINESTRING:
+        case GEOS_LINEARRING:
+            /* sub_geom_count defaults to 1 */
+
+            for( j = 0; j < sub_geom_count; j++ )
+            {
+                if(multi == 1)
+                {
+		      geometry = GEOSGetGeometryN_r( handle, geometry, j );
+                      coords = GEOSGeom_getCoordSeq_r( handle, geometry );
+                }
+                else
+		      coords = GEOSGeom_getCoordSeq_r( handle, geometry );
+
+                GEOSCoordSeq_getDimensions_r( handle, coords, &dims );
+                GEOSCoordSeq_getSize_r( handle, coords, &num_points );
+
+                if( j == 0 )
+                    STcat(buffer_item, "d=\"");
+                else
+                    STcat(buffer_item, ";d=\"");
+
+                buffer = adu_geom_asSVG_realloc(&len, buffer_item, &buffer_size, buffer);
+
+                for( i = 0; i < num_points; i++ )
+                {
+                    GEOSCoordSeq_getX_r( handle, coords, i, &x );
+                    GEOSCoordSeq_getY_r( handle, coords, i, &y );
+    
+                    if( dims > 2 )
+                    {
+                        GEOSCoordSeq_getZ_r( handle, coords, i, &z );
+                        if( i == -1 )
+                            sprintf(buffer_item, "M %f %f %f", x, y, z);
+                        else
+                            sprintf(buffer_item, " L %f %f %f", x, y, z);
+                    }
+                    else
+                    {
+                        if( i == 0 )
+                            sprintf(buffer_item, "M %f %f", x, y);
+                        else
+                            sprintf(buffer_item, " L %f %f", x, y);
+                    }
+
+                    buffer = adu_geom_asSVG_realloc(&len, buffer_item, &buffer_size, buffer);
+                }
+
+		STcat(buffer_item, "\"");
+                buffer = adu_geom_asSVG_realloc(&len, buffer_item, &buffer_size, buffer);
+            }
+    
+            dv_buf.db_data = STalloc(buffer);
+            dv_buf.db_length = STlen(buffer);
+            dv_buf.db_datatype = DB_VBYTE_TYPE;
+
+            status = adu_wkbDV_to_long( adf_scb, &dv_buf, dv_out );
+            MEsysfree((PTR) buffer);
+            MEtfree(dv_buf.db_data);
+
+            break;
+        case GEOS_MULTIPOLYGON:
+            sub_geom_count = GEOSGetNumGeometries_r( handle, geometry );
+            multi = 1;
+        case GEOS_POLYGON:
+            /* sub_geom_count defaults to 1 */
+            for( j = 0; j < sub_geom_count; j++ )
+            {
+                if(multi == 1)
+                {
+		    geometry = GEOSGetGeometryN_r( handle, geometry, j );
+                    exterior = GEOSGetExteriorRing_r( handle, geometry );
+                }
+                else
+                {
+                    exterior = GEOSGetExteriorRing_r( handle, geometry );
+                }
+
+                num_interior = GEOSGetNumInteriorRings_r( handle, geometry );
+                coords = GEOSGeom_getCoordSeq_r( handle, exterior );
+
+                GEOSCoordSeq_getDimensions_r( handle, coords, &dims );
+                GEOSCoordSeq_getSize_r( handle, coords, &num_points );
+
+                if( j == 0 )
+                    sprintf(buffer_item, "d=\"");
+                else
+                    sprintf(buffer_item, ";d=\"");
+
+                buffer = adu_geom_asSVG_realloc(&len, buffer_item, &buffer_size, buffer);
+
+                /* exterior geometry */
+                for( i = 0; i < num_points; i++ )
+                {
+                    GEOSCoordSeq_getX_r( handle, coords, i, &x );
+                    GEOSCoordSeq_getY_r( handle, coords, i, &y );
+    
+                    if( dims > 2 )
+                    {
+                        GEOSCoordSeq_getZ_r( handle, coords, i, &z );
+                        if( i == 0 )
+                            sprintf(buffer_item, "M %f %f %f", x, y, z);
+                        else
+                            sprintf(buffer_item, " L %f %f %f", x, y, z);
+                    }
+                    else
+                    {
+                        if( i == 0 )
+                            sprintf(buffer_item, "M %f %f", x, y);
+                        else
+                            sprintf(buffer_item, " L %f %f", x, y);
+                    }
+
+                    buffer = adu_geom_asSVG_realloc(&len, buffer_item, &buffer_size, buffer);
+                }
+
+                /* interior geometry */
+                for( i = 0; i < num_interior; i++ )
+                {
+                    interior = GEOSGetInteriorRingN_r(handle, geometry, i);
+                    coords = GEOSGeom_getCoordSeq_r( handle, interior );
+                    GEOSCoordSeq_getDimensions_r( handle, coords, &dims );
+                    GEOSCoordSeq_getSize_r( handle, coords, &num_points );
+
+                    for( j = 0; j < num_points; j++ )
+                    {
+                        GEOSCoordSeq_getX_r( handle, coords, j, &x );
+                        GEOSCoordSeq_getY_r( handle, coords, j, &y );
+    
+                        if( dims > 2 )
+                        {
+                            GEOSCoordSeq_getZ_r( handle, coords, j, &z );
+                            if( j == 0 )
+                                sprintf(buffer_item, " Z M %f %f %f", x, y, z);
+                            else
+                                sprintf(buffer_item, " L %f %f %f", x, y, z);
+                        }
+                        else
+                        {
+                            if( j == 0 )
+                                sprintf(buffer_item, " Z M %f %f", x, y);
+                            else
+                                sprintf(buffer_item, " L %f %f", x, y);
+                        }
+
+                        buffer = adu_geom_asSVG_realloc(&len, buffer_item, &buffer_size, buffer);
+                    }
+                }
+
+		STcat(buffer_item, "\"");
+                buffer = adu_geom_asSVG_realloc(&len, buffer_item, &buffer_size, buffer);
+            }
+    
+            dv_buf.db_data = STalloc(buffer);
+            dv_buf.db_length = STlen(buffer);
+            dv_buf.db_datatype = DB_VBYTE_TYPE;
+
+            status = adu_wkbDV_to_long( adf_scb, &dv_buf, dv_out );
+            MEsysfree((PTR) buffer);
+            MEtfree(dv_buf.db_data);
+
+            break;
+    }
+
+    if (status != E_DB_OK)
+    {
+        return (adu_error(adf_scb, E_AD5601_GEOSPATIAL_INTERNAL, 2, 0,
+            "asSVG: Failed to convert WKB to SVG."));
+    }
+    
+    /* Clean up GEOS. */
+    finishGEOS_r(handle);
+    return status;
+#endif
+}
+
 DB_STATUS
 adu_dimension(
 ADF_CB           *adf_scb,

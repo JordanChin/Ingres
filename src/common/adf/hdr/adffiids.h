@@ -1884,3 +1884,4 @@
 #define ADFI_1698_GEOMC_FROM_WKB        (ADI_FI_ID)1698 /* geomcollfromwkb(bin) */
 #define ADFI_1699_GEOMC_S_FROM_TEXT     (ADI_FI_ID)1699 /* geomcollfromtext(text, int) */
 #define ADFI_1700_GEOMC_S_FROM_WKB      (ADI_FI_ID)1700 /* geomcollfromwkb(bin,int) */
+#define ADFI_1701_GEOM_AS_SVG           (ADI_FI_ID)1701 /* AsSVG(geom) */
