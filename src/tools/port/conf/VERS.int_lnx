@@ -18,7 +18,9 @@
 #set: option DBL
 #set: option B64
 #set: option CAS_ENABLED
-#set: build 00
+#set: build 02
+# This should not be submitted to main
+#set: option GEO
 
 
 # Any jam definitions go here, e.g. VAR = value ;

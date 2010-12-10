@@ -10,7 +10,7 @@
 #	    Fixed a typo in set option WITH_GEO
 
 #set: config int_w32
-#set: build 00
+#set: build 02
 #set: inc 00
 
 
