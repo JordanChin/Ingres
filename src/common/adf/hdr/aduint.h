@@ -758,6 +758,7 @@ FUNC_EXTERN ADU_NORM1_FUNC adu_geom_asTextRaw; /* Convert a geometry to WKT
 FUNC_EXTERN ADU_NORM2_FUNC adu_geom_asTextRound; /* Convert a geometry to WKT
                                                     with specified rounding */
 FUNC_EXTERN ADU_NORM1_FUNC adu_geom_asBinary; /* Convert a geometry to WKB. */
+FUNC_EXTERN ADU_NORM1_FUNC adu_geom_asSVG; /* Convert a geometry to SVG. */
 
 FUNC_EXTERN ADU_NORM2_FUNC adu_geom_nbr; /* Extract an nbr for rtree indexing */
 FUNC_EXTERN ADU_NORM1_FUNC adu_geom_hilbert; /* Find the hilbert number for rtree indexing */
